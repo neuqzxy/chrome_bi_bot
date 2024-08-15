@@ -17,6 +17,9 @@
     "url": "https://github.com/neuqzxy/chrome_bi_bot"
   },
   "dependencies": {
+    "@arco-design/web-react": "^2.63.3",
+    "@visactor/vchart": "^1.11.12",
+    "@visactor/vmind": "^1.2.13",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
