@@ -1,37 +1,44 @@
 import VMind, { Model } from "@visactor/vmind";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { API_KEY } from './config';
+import { API_KEY, END_POINT, PROMPT } from './config';
 import VChart from "@visactor/vchart";
+import { csv2json } from 'csvify-json';
 
-async function askVmind() {
+async function getCSVData(text: string) {
+  const prompt = `${PROMPT}\n${text}`;
+  const response = await fetch(END_POINT, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${API_KEY}`
+    },
+    body: JSON.stringify({
+      model: 'gpt-4-0613',
+      messages: [
+        { "role": "user", "content": prompt }
+      ],
+      max_tokens: 2048,
+      n: 1,
+      stop: null,
+      temperature: 0.5,
+    })
+  });
+  const result = await response.json();
+  return result.choices[0].message.content as string;
+}
+
+async function askVmind(csvData: string) {
   const vmind = new VMind({
-    url: 'https://api.xty.app/v1/chat/completions',
+    url: END_POINT,
     model: Model.GPT_4_0613, //指定你指定的模型
     headers: { //指定调用大模型服务时的header
-      'api-key': API_KEY //Your LLM API Key
+      'Authorization': `Bearer ${API_KEY}`
     }
   });
-  const csvData = `商品名称,region,销售额
-  可乐,south,2350
-  可乐,east,1027
-  可乐,west,1027
-  可乐,north,1027
-  雪碧,south,215
-  雪碧,east,654
-  雪碧,west,159
-  雪碧,north,28
-  芬达,south,345
-  芬达,east,654
-  芬达,west,2100
-  芬达,north,1679
-  醒目,south,1476
-  醒目,east,830
-  醒目,west,532
-  醒目,north,498`;
-  //传入csv字符串，获得fieldInfo和dataset用于图表生成
-  const { fieldInfo, dataset } = vmind.parseCSVData(csvData);
-  const userPrompt='show me the changes in sales rankings of various car brand'
+  const dataset = csv2json(csvData) as any;
+  const fieldInfo  = vmind.getFieldInfo(dataset);
+  const userPrompt='use appropriate charts to display this data'
   const { spec, time } = await vmind.generateChart(userPrompt, fieldInfo, dataset);
   return spec;
 }
@@ -42,9 +49,11 @@ const Popup = () => {
 
   const [mouseX, setMouseX] = useState<number>(0);
   const [mouseY, setMouseY] = useState<number>(0);
-  const posX = useMemo(() => mouseX + window.scrollX, [mouseX]);
-  const posY = useMemo(() => mouseY + window.scrollY, [mouseY]);
+  const posX = useMemo(() => mouseX, [mouseX]);
+  const posY = useMemo(() => mouseY, [mouseY]);
   const [selectText, setSelectText] = useState<string>('');
+
+  // const containerRef = useRef();
 
   useEffect(() => {
     
@@ -55,38 +64,42 @@ const Popup = () => {
       }
     
       const text = selection.toString().trim();
-      if (text) {
+      if (text && text !== selectText) {
         setMouseX(event.pageX);
         setMouseY(event.pageY);
         setVisible(true);
         setPrepareForSearch(true);
         setSelectText(text);
       }
+      if (!text) {
+        setVisible(false);
+      }
     }
     document.addEventListener('mouseup', handleMouseUp);
 
     return () => {
-      // document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     }
-  }, []);
+  }, [selectText]);
 
   const handleSearch = useCallback(() => {
     async function _handleSearch() {
       // get data
+      const csvData = await getCSVData(selectText);
       // search by vmind
-      const spec = await askVmind();
+      const spec = await askVmind(csvData);
       // render by vchart
       const vchart = new VChart(spec, { dom: 'chart' });
       vchart.renderSync();
       setPrepareForSearch(false);
     }
     
-
-  }, []);
+    _handleSearch();
+  }, [selectText]);
 
   return (
     <div
+      // ref={containerRef}
       style={{ position: 'absolute', left: posX, top: posY, display: visible ? 'block' : 'none' }}
     >
       {
@@ -101,15 +114,24 @@ const Popup = () => {
               textDecoration: 'none',
               display: 'inline-block',
               fontSize: '16px',
-              minWidth: '120px'
+              minWidth: '150px'
             }}
             onClick={handleSearch}
           >
-            it's bot time
+            analysis for me
           </button>
         )
       }
-      
+      <div
+        style={{
+          display: prepareForSearch ? 'none' : 'block',
+          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1), 0 4px 8px rgba(0, 0, 0, 0.1)',
+          borderRadius: '4px',
+          padding: 6
+        }}
+      >
+        <div style={{ width: 700, height: 300 }} id="chart"></div>
+      </div>
     </div>
   );
 };
